@@ -165,7 +165,7 @@
      (python . t)
      (ruby . t)
      (screen . nil)
-     (sh . t)
+     (shell . t)
      (sql . nil)
      (sqlite . t))))
 

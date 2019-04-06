@@ -42,3 +42,4 @@
 
 
 (provide 'init-clojure)
+;;; init-clojure ends here

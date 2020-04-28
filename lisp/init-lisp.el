@@ -1,12 +1,29 @@
+;;; init-lisp.el --- Emacs lisp settings, and common config for other lisps -*- lexical-binding: t -*-
+;;; Commentary:
+;;; Code:
+
 (require-package 'elisp-slime-nav)
 (dolist (hook '(emacs-lisp-mode-hook ielm-mode-hook))
-  (add-hook hook 'elisp-slime-nav-mode))
-
-(require-package 'lively)
+  (add-hook hook 'turn-on-elisp-slime-nav-mode))
+(add-hook 'emacs-lisp-mode-hook (lambda () (setq mode-name "ELisp")))
 
 (setq-default initial-scratch-message
-              (concat ";; Happy hacking " (or user-login-name "") "!\n\n"))
+              (concat ";; Happy hacking, " user-login-name " - Emacs ♥ you!\n\n"))
 
+
+(defun sanityinc/headerise-elisp ()
+  "Add minimal header and footer to an elisp buffer in order to placate flycheck."
+  (interactive)
+  (let ((fname (if (buffer-file-name)
+                   (file-name-nondirectory (buffer-file-name))
+                 (error "This buffer is not visiting a file"))))
+    (save-excursion
+      (goto-char (point-min))
+      (insert ";;; " fname " --- Insert description here -*- lexical-binding: t -*-\n"
+              ";;; Commentary:\n"
+              ";;; Code:\n\n")
+      (goto-char (point-max))
+      (insert ";;; " fname " ends here\n"))))
 
 
 ;; Make C-x C-e run 'eval-region if the region is active
@@ -18,29 +35,39 @@
       (eval-region (min (point) (mark)) (max (point) (mark)))
     (pp-eval-last-sexp prefix)))
 
-(global-set-key (kbd "M-:") 'pp-eval-expression)
+(global-set-key [remap eval-expression] 'pp-eval-expression)
 
 (after-load 'lisp-mode
   (define-key emacs-lisp-mode-map (kbd "C-x C-e") 'sanityinc/eval-last-sexp-or-region))
 
-(require-package 'ipretty)
-(ipretty-mode 1)
+(when (maybe-require-package 'ipretty)
+  (add-hook 'after-init-hook 'ipretty-mode))
 
 
-(defadvice pp-display-expression (after make-read-only (expression out-buffer-name) activate)
+(defun sanityinc/make-read-only (expression out-buffer-name)
   "Enable `view-mode' in the output buffer - if any - so it can be closed with `\"q\"."
   (when (get-buffer out-buffer-name)
     (with-current-buffer out-buffer-name
       (view-mode 1))))
+(advice-add 'pp-display-expression :after 'sanityinc/make-read-only)
 
+
+
+(defun sanityinc/maybe-set-bundled-elisp-readonly ()
+  "If this elisp appears to be part of Emacs, then disallow editing."
+  (when (and (buffer-file-name)
+             (string-match-p "\\.el\\.gz\\'" (buffer-file-name)))
+    (setq buffer-read-only t)
+    (view-mode 1)))
+
+(add-hook 'emacs-lisp-mode-hook 'sanityinc/maybe-set-bundled-elisp-readonly)
 
 
 ;; Use C-c C-z to toggle between elisp files and an ielm session
 ;; I might generalise this to ruby etc., or even just adopt the repl-toggle package.
 
-(defvar sanityinc/repl-original-buffer nil
+(defvar-local sanityinc/repl-original-buffer nil
   "Buffer from which we jumped to this REPL.")
-(make-variable-buffer-local 'sanityinc/repl-original-buffer)
 
 (defvar sanityinc/repl-switch-function 'switch-to-buffer-other-window)
 
@@ -57,9 +84,9 @@
   (interactive)
   (if sanityinc/repl-original-buffer
       (funcall sanityinc/repl-switch-function sanityinc/repl-original-buffer)
-    (error "No original buffer.")))
+    (error "No original buffer")))
 
-(after-load 'lisp-mode
+(after-load 'elisp-mode
   (define-key emacs-lisp-mode-map (kbd "C-c C-z") 'sanityinc/switch-to-ielm))
 (after-load 'ielm
   (define-key ielm-map (kbd "C-c C-z") 'sanityinc/repl-switch-back))
@@ -68,60 +95,29 @@
 ;; Hippie-expand
 ;; ----------------------------------------------------------------------------
 
-(defun my/emacs-lisp-module-name ()
-  "Search the buffer for `provide' declaration."
-  (save-excursion
-    (goto-char (point-min))
-    (when (search-forward-regexp "^(provide '" nil t)
-      (symbol-name (symbol-at-point)))))
-
-;; Credit to Chris Done for this one.
-(defun my/try-complete-lisp-symbol-without-namespace (old)
-  "Hippie expand \"try\" function which expands \"-foo\" to \"modname-foo\" in elisp."
-  (unless old
-    (he-init-string (he-lisp-symbol-beg) (point))
-    (when (string-prefix-p "-" he-search-string)
-      (let ((mod-name (my/emacs-lisp-module-name)))
-        (when mod-name
-          (setq he-expand-list (list (concat mod-name he-search-string)))))))
-  (when he-expand-list
-    (he-substitute-string (car he-expand-list))
-    (setq he-expand-list nil)
-    t))
-
 (defun set-up-hippie-expand-for-elisp ()
   "Locally set `hippie-expand' completion functions for use with Emacs Lisp."
   (make-local-variable 'hippie-expand-try-functions-list)
   (add-to-list 'hippie-expand-try-functions-list 'try-complete-lisp-symbol t)
-  (add-to-list 'hippie-expand-try-functions-list 'try-complete-lisp-symbol-partially t)
-  (add-to-list 'hippie-expand-try-functions-list 'my/try-complete-lisp-symbol-without-namespace t))
+  (add-to-list 'hippie-expand-try-functions-list 'try-complete-lisp-symbol-partially t))
 
 
 ;; ----------------------------------------------------------------------------
 ;; Automatic byte compilation
 ;; ----------------------------------------------------------------------------
-
-(require-package 'auto-compile)
-(auto-compile-on-save-mode 1)
-(auto-compile-on-load-mode 1)
+(when (maybe-require-package 'auto-compile)
+  (add-hook 'after-init-hook 'auto-compile-on-save-mode)
+  (add-hook 'after-init-hook 'auto-compile-on-load-mode))
 
 ;; ----------------------------------------------------------------------------
 ;; Load .el if newer than corresponding .elc
 ;; ----------------------------------------------------------------------------
 (setq load-prefer-newer t)
 
-;; ----------------------------------------------------------------------------
-;; Highlight current sexp
-;; ----------------------------------------------------------------------------
+
 
-(require-package 'hl-sexp)
-
-;; Prevent flickery behaviour due to hl-sexp-mode unhighlighting before each command
-(after-load 'hl-sexp
-  (defadvice hl-sexp-mode (after unflicker (&optional turn-on) activate)
-    (when turn-on
-      (remove-hook 'pre-command-hook #'hl-sexp-unhighlight))))
-
+(require-package 'immortal-scratch)
+(add-hook 'after-init-hook 'immortal-scratch-mode)
 
 
 ;;; Support byte-compilation in a sub-process, as
@@ -143,28 +139,26 @@
 ;; ----------------------------------------------------------------------------
 ;; Enable desired features for all lisp modes
 ;; ----------------------------------------------------------------------------
-(require-package 'rainbow-delimiters)
-(require-package 'redshank)
-(after-load 'redshank
-  (diminish 'redshank-mode))
+(defun sanityinc/enable-check-parens-on-save ()
+  "Run `check-parens' when the current buffer is saved."
+  (add-hook 'after-save-hook #'check-parens nil t))
 
-(maybe-require-package 'aggressive-indent)
+(defvar sanityinc/lispy-modes-hook
+  '(enable-paredit-mode
+    sanityinc/enable-check-parens-on-save)
+  "Hook run in all Lisp modes.")
+
+
+(when (maybe-require-package 'aggressive-indent)
+  (add-to-list 'sanityinc/lispy-modes-hook 'aggressive-indent-mode))
 
 (defun sanityinc/lisp-setup ()
   "Enable features useful in any Lisp mode."
-  (rainbow-delimiters-mode t)
-  (enable-paredit-mode)
-  (when (fboundp 'aggressive-indent-mode)
-    (aggressive-indent-mode))
-  (turn-on-eldoc-mode)
-  (redshank-mode)
-  (add-hook 'after-save-hook #'check-parens nil t))
+  (run-hooks 'sanityinc/lispy-modes-hook))
 
 (defun sanityinc/emacs-lisp-setup ()
   "Enable features useful when working with elisp."
-  (elisp-slime-nav-mode t)
-  (set-up-hippie-expand-for-elisp)
-  (ac-emacs-lisp-mode-setup))
+  (set-up-hippie-expand-for-elisp))
 
 (defconst sanityinc/elispy-modes
   '(emacs-lisp-mode ielm-mode)
@@ -183,11 +177,8 @@
 (dolist (hook (mapcar #'derived-mode-hook-name sanityinc/elispy-modes))
   (add-hook hook 'sanityinc/emacs-lisp-setup))
 
-(if (boundp 'eval-expression-minibuffer-setup-hook)
-    (add-hook 'eval-expression-minibuffer-setup-hook #'eldoc-mode)
-  (require-package 'eldoc-eval)
-  (require 'eldoc-eval)
-  (eldoc-in-minibuffer-mode 1))
+(when (boundp 'eval-expression-minibuffer-setup-hook)
+  (add-hook 'eval-expression-minibuffer-setup-hook #'eldoc-mode))
 
 (add-to-list 'auto-mode-alist '("\\.emacs-project\\'" . emacs-lisp-mode))
 (add-to-list 'auto-mode-alist '("archive-contents\\'" . emacs-lisp-mode))
@@ -212,7 +203,7 @@
 (defvar sanityinc/vc-reverting nil
   "Whether or not VC or Magit is currently reverting buffers.")
 
-(defadvice revert-buffer (after sanityinc/maybe-remove-elc activate)
+(defun sanityinc/maybe-remove-elc (&rest _)
   "If reverting from VC, delete any .elc file that will now be out of sync."
   (when sanityinc/vc-reverting
     (when (and (eq 'emacs-lisp-mode major-mode)
@@ -222,13 +213,13 @@
         (when (file-exists-p elc)
           (message "Removing out-of-sync elc file %s" (file-name-nondirectory elc))
           (delete-file elc))))))
+(advice-add 'revert-buffer :after 'sanityinc/maybe-remove-elc)
 
-(defadvice magit-revert-buffers (around sanityinc/reverting activate)
+(defun sanityinc/reverting (orig &rest args)
   (let ((sanityinc/vc-reverting t))
-    ad-do-it))
-(defadvice vc-revert-buffer-internal (around sanityinc/reverting activate)
-  (let ((sanityinc/vc-reverting t))
-    ad-do-it))
+    (apply orig args)))
+(advice-add 'magit-revert-buffers :around 'sanityinc/reverting)
+(advice-add 'vc-revert-buffer-internal :around 'sanityinc/reverting)
 
 
 
@@ -244,15 +235,38 @@
 
 
 
+;; Extras for theme editing
 (when (maybe-require-package 'rainbow-mode)
   (defun sanityinc/enable-rainbow-mode-if-theme ()
-    (when (string-match "\\(color-theme-\\|-theme\\.el\\)" (buffer-name))
-      (rainbow-mode 1)))
+    (when (and (buffer-file-name) (string-match-p "\\(color-theme-\\|-theme\\.el\\)" (buffer-file-name)))
+      (rainbow-mode)))
+  (add-hook 'emacs-lisp-mode-hook 'sanityinc/enable-rainbow-mode-if-theme)
+  (add-hook 'help-mode-hook 'rainbow-mode)
+  (after-load 'rainbow-mode
+    (diminish 'rainbow-mode)))
 
-  (add-hook 'emacs-lisp-mode-hook 'sanityinc/enable-rainbow-mode-if-theme))
+
 
 (when (maybe-require-package 'highlight-quoted)
   (add-hook 'emacs-lisp-mode-hook 'highlight-quoted-mode))
 
+
+(when (maybe-require-package 'flycheck)
+  (require-package 'flycheck-package)
+  (after-load 'flycheck
+    (after-load 'elisp-mode
+      (flycheck-package-setup))))
+
+
+
+;; ERT
+(after-load 'ert
+  (define-key ert-results-mode-map (kbd "g") 'ert-results-rerun-all-tests))
+
+
+(maybe-require-package 'cl-libify)
+
+(maybe-require-package 'cask-mode)
 
 (provide 'init-lisp)
+;;; init-lisp.el ends here

@@ -1,3 +1,7 @@
+;;; init-common-lisp.el --- Common Lisp support -*- lexical-binding: t -*-
+;;; Commentary:
+;;; Code:
+
 ;; See http://bc.tech.coop/blog/070927.html
 (add-auto-mode 'lisp-mode "\\.cl\\'")
 (add-hook 'lisp-mode-hook (lambda ()
@@ -11,7 +15,10 @@
                  '(sbcl ("sbcl") :coding-system utf-8-unix)))
   (when (executable-find "lisp")
     (add-to-list 'slime-lisp-implementations
-                 '(cmucl ("lisp") :coding-system iso-latin-1-unix))))
+                 '(cmucl ("lisp") :coding-system iso-latin-1-unix)))
+  (when (executable-find "ccl")
+    (add-to-list 'slime-lisp-implementations
+                 '(ccl ("ccl") :coding-system utf-8-unix))))
 
 ;; From http://bc.tech.coop/blog/070515.html
 (defun lispdoc ()
@@ -42,3 +49,4 @@
 
 
 (provide 'init-common-lisp)
+;;; init-common-lisp.el ends here

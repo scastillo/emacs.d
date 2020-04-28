@@ -35,5 +35,8 @@
       visible-bell t)
 (show-paren-mode t)
 
+(setq  set-mouse-color "#000000")
+
+
 (provide 'init-local)
 ;;; init-local.el ends here

@@ -1,5 +1,8 @@
+;;; init-paredit.el --- Configure paredit structured editing -*- lexical-binding: t -*-
+;;; Commentary:
+;;; Code:
+
 (require-package 'paredit)
-(autoload 'enable-paredit-mode "paredit")
 
 (defun maybe-map-paredit-newline ()
   (unless (or (memq major-mode '(inferior-emacs-lisp-mode cider-repl-mode))
@@ -10,22 +13,15 @@
 
 (after-load 'paredit
   (diminish 'paredit-mode " Par")
-  (dolist (binding (list (kbd "C-<left>") (kbd "C-<right>")
-                         (kbd "C-M-<left>") (kbd "C-M-<right>")))
-    (define-key paredit-mode-map binding nil))
-
-  ;; Disable kill-sentence, which is easily confused with the kill-sexp
-  ;; binding, but doesn't preserve sexp structure
-  (define-key paredit-mode-map [remap kill-sentence] nil)
-  (define-key paredit-mode-map [remap backward-kill-sentence] nil)
-
-  ;; Allow my global binding of M-? to work when paredit is active
-  (define-key paredit-mode-map (kbd "M-?") nil))
+  ;; Suppress certain paredit keybindings to avoid clashes, including
+  ;; my global binding of M-?
+  (dolist (binding '("C-<left>" "C-<right>" "C-M-<left>" "C-M-<right>" "M-s" "M-?"))
+    (define-key paredit-mode-map (read-kbd-macro binding) nil)))
 
 
 ;; Compatibility with other modes
 
-(suspend-mode-during-cua-rect-selection 'paredit-mode)
+(sanityinc/suspend-mode-during-cua-rect-selection 'paredit-mode)
 
 
 ;; Use paredit in the minibuffer
@@ -50,7 +46,9 @@
 ;; ----------------------------------------------------------------------------
 
 (require-package 'paredit-everywhere)
+(after-load 'paredit-everywhere
+  (define-key paredit-everywhere-mode-map (kbd "M-s") nil))
 (add-hook 'prog-mode-hook 'paredit-everywhere-mode)
-(add-hook 'css-mode-hook 'paredit-everywhere-mode)
 
 (provide 'init-paredit)
+;;; init-paredit.el ends here
